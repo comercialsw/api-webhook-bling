@@ -7,13 +7,13 @@ import psycopg2
 
 app = Flask(__name__)
 
-# Pegue tudo das variáveis de ambiente
-DB_HOST = os.getenv("DB_HOST")          # ex: "db.xxxxxx.supabase.co"
-DB_NAME = os.getenv("DB_NAME")          # ex: "postgres"
-DB_USER = os.getenv("DB_USER")          # ex: "admin"
-DB_PASS = os.getenv("DB_PASS")          # ex: "sua_senha_super_secreta"
-DB_PORT = os.getenv("DB_PORT", "5432")  # geralmente 5432
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")  # seu client_secret do Bling
+# Todas as configurações sensíveis via variáveis de ambiente
+DB_HOST = os.getenv("DB_HOST")
+DB_NAME = os.getenv("DB_NAME")
+DB_USER = os.getenv("DB_USER")
+DB_PASS = os.getenv("DB_PASS")
+DB_PORT = os.getenv("DB_PORT", "5432")
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 
 def trata_data(data_str):
     if data_str in [None, "", "0000-00-00"]:
@@ -70,7 +70,7 @@ def get_id_pedido(cursor, id_bling):
 
 def processa_pedido(detalhes, cursor):
     pedido = {
-        "id_bling": detalhes["id"],
+        "id_bling": detalhes.get("id"),
         "n_pedido": detalhes.get("numero"),
         "id_loja": detalhes.get("loja", {}).get("id"),
         "id_nf": detalhes.get("notaFiscal", {}).get("id"),
@@ -101,20 +101,26 @@ def webhook_bling():
         return jsonify({"error": "Invalid signature"}), 401
     try:
         payload = json.loads(raw)
-        detalhes = payload.get("data", {})
-        conn = psycopg2.connect(
-            host=DB_HOST,
-            database=DB_NAME,
-            user=DB_USER,
-            password=DB_PASS,
-            port=DB_PORT
-        )
-        cur = conn.cursor()
-        processa_pedido(detalhes, cur)
-        conn.commit()
-        cur.close()
-        conn.close()
-        return jsonify({"status": "ok"}), 200
+        event_type = payload.get("event", "")
+        # Só processa eventos de pedidos
+        if event_type.startswith("order."):
+            detalhes = payload.get("data", {})
+            conn = psycopg2.connect(
+                host=DB_HOST,
+                database=DB_NAME,
+                user=DB_USER,
+                password=DB_PASS,
+                port=DB_PORT
+            )
+            cur = conn.cursor()
+            processa_pedido(detalhes, cur)
+            conn.commit()
+            cur.close()
+            conn.close()
+            return jsonify({"status": "ok"}), 200
+        else:
+            print(f"Evento ignorado: {event_type}")
+            return jsonify({"status": f"Evento ignorado: {event_type}"}), 200
     except Exception as e:
         print("Erro ao processar pedido:", e)
         return jsonify({"error": str(e)}), 500
